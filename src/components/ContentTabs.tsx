@@ -53,7 +53,7 @@ export function ContentTabs({ onChange }: Props) {
 }
 
 function UrlForm({ onChange }: { onChange: (s: string) => void }) {
-  const [input, setInput] = useState<UrlInput>({ text: 'https://qrc-gen.vercel.app' });
+  const [input, setInput] = useState<UrlInput>({ text: 'https://qr.donotpanic.space' });
 
   const update = (next: UrlInput) => {
     setInput(next);
