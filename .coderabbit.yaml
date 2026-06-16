@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit config for qrc-gen (Next.js App Router + TS + serverless QR API).
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  poem: false
+  collapse_walkthrough: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/.next/**"
+    - "!**/out/**"
+    - "!**/package-lock.json"
+    - "!**/next-env.d.ts"
+    - "!**/*.tsbuildinfo"
+    - "!public/**"
+
+  path_instructions:
+    - path: "src/**/*.{ts,tsx}"
+      instructions: >
+        Next.js App Router + TypeScript QR-code generator. Prioritize
+        correctness, security, accessibility, and React hooks rules. Ignore
+        pure styling / Tailwind class-name nits.
+    - path: "api/**/*.{ts,tsx}"
+      instructions: >
+        Serverless API endpoints (pay-per-use QR generation). Flag missing
+        input validation/sanitization on query params, unbounded payloads,
+        missing rate limiting, weak error handling, and any auth gaps. Never
+        accept hardcoded secrets — they must come from env.
+    - path: "src/lib/**/*.ts"
+      instructions: >
+        Shared helpers (incl. qr-code-styling usage). Flag unsafe input
+        handling and resource leaks; keep functions pure where possible.
+
+  tools:
+    eslint:
+      enabled: true
+    biome:
+      enabled: false
+    gitleaks:
+      enabled: true
+
+chat:
+  auto_reply: true
