@@ -7,6 +7,14 @@ reviews:
   profile: chill
   request_changes_workflow: false
   high_level_summary: true
+  high_level_summary_instructions: |
+    Create concise release notes optimized for a solo developer on public tools:
+    - One-sentence purpose of the change.
+    - Bullet list of key functional changes (what + why, max 5 bullets).
+    - Call out breaking changes, new dependencies, security/performance notes, or test gaps.
+    - End with a short "Verification" section: required manual checks or follow-up tasks.
+    Keep total under 120 words. Use clean Markdown bullets and bold labels.
+  high_level_summary_in_walkthrough: true   # puts summary in walkthrough comment instead of polluting PR description
   review_status: true
   poem: false
   collapse_walkthrough: true
