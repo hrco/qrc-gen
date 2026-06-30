@@ -1,7 +1,10 @@
 import io
+import ipaddress
 import logging
 import re
+import socket
 from typing import Optional
+from urllib.parse import urlparse
 
 import segno
 from PIL import Image
@@ -11,6 +14,69 @@ logger = logging.getLogger(__name__)
 MAX_LOGO_RATIO = 0.22
 LOGO_MIN_PADDING_RATIO = 0.04
 LOGO_MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
+
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _validate_logo_url(url: str) -> bool:
+    """SSRF guard: reject URLs that resolve to private/internal addresses.
+
+    Checks before the HTTP request is issued:
+    - Scheme must be http or https.
+    - Hostname must resolve via DNS.
+    - Every resolved IP must be a routable public address (not private,
+      loopback, link-local, reserved, multicast, or unspecified).
+
+    Why: the /qr logo param is user-supplied. Without validation an attacker
+    can reach cloud metadata (169.254.169.254), loopback, or co-tenant hosts.
+    Residual TOCTOU gap (DNS rebinding) is mitigated by follow_redirects=False
+    and not following HTTP redirects to validate again.
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in _ALLOWED_SCHEMES:
+            logger.warning("SSRF guard: rejected scheme %r for logo URL", parsed.scheme)
+            return False
+
+        hostname = parsed.hostname
+        if not hostname:
+            logger.warning("SSRF guard: no hostname in logo URL")
+            return False
+
+        try:
+            addr_infos = socket.getaddrinfo(hostname, None)
+        except socket.gaierror as e:
+            logger.warning("SSRF guard: DNS resolution failed for %r: %s", hostname, e)
+            return False
+
+        if not addr_infos:
+            logger.warning("SSRF guard: no addresses for %r", hostname)
+            return False
+
+        for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+            ip_str = sockaddr[0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                logger.warning("SSRF guard: invalid IP %r resolved for %r", ip_str, hostname)
+                return False
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                logger.warning(
+                    "SSRF guard: blocked internal IP %s (resolved from %r)", ip, hostname
+                )
+                return False
+
+        return True
+    except Exception as e:
+        logger.warning("SSRF guard: unexpected error validating URL: %s", e)
+        return False
 
 
 def generate_qr(
@@ -146,21 +212,38 @@ def _composite_logo(qr_image: Image.Image, logo: Image.Image) -> Image.Image:
 async def download_logo(url: str) -> Optional[bytes]:
     import httpx
 
+    # SSRF guard: validate before issuing any network request.
+    if not _validate_logo_url(url):
+        return None
+
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, follow_redirects=True)
-            if resp.status_code != 200:
-                logger.warning("Logo download failed: HTTP %s from %s", resp.status_code, url)
-                return None
-            content_type = resp.headers.get("content-type", "")
-            if not content_type.startswith("image/"):
-                logger.warning("Logo URL returned non-image content-type: %s", content_type)
-                return None
-            body = resp.read()
-            if len(body) > LOGO_MAX_DOWNLOAD_BYTES:
-                logger.warning("Logo too large: %d bytes", len(body))
-                return None
-            return body
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            # Stream response so we can enforce the size cap during download,
+            # not just after — avoids loading a huge body into memory first.
+            async with client.stream("GET", url) as resp:
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Logo download failed: HTTP %s from %s", resp.status_code, url
+                    )
+                    return None
+                content_type = resp.headers.get("content-type", "")
+                if not content_type.startswith("image/"):
+                    logger.warning(
+                        "Logo URL returned non-image content-type: %s", content_type
+                    )
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes(chunk_size=65536):
+                    total += len(chunk)
+                    if total > LOGO_MAX_DOWNLOAD_BYTES:
+                        logger.warning(
+                            "Logo download aborted: exceeded %d bytes limit",
+                            LOGO_MAX_DOWNLOAD_BYTES,
+                        )
+                        return None
+                    chunks.append(chunk)
+                return b"".join(chunks)
     except Exception as e:
         logger.warning("Logo download error: %s", e)
         return None
