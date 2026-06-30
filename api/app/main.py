@@ -18,9 +18,12 @@ app = FastAPI(title="qrc-gen API", version="1.0.0", docs_url=None, redoc_url=Non
 
 app.add_middleware(
     CORSMiddleware,
+    # Public stateless API — wildcard origin is intentional.
+    # credentials=False is required when allow_origins="*"; combining them
+    # violates the CORS spec and is rejected by browsers.
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
