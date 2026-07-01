@@ -1,0 +1,9 @@
+services:
+  qrc-gen:
+    build: .
+    container_name: qrc-gen-api
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
